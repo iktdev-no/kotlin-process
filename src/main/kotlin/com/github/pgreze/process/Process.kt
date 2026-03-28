@@ -39,9 +39,9 @@ suspend fun process(
     directory: File? = null,
     /** Determine if process should be destroyed forcibly on job cancellation. */
     destroyForcibly: Boolean = false,
+    onProcessStarted: suspend (Long?) -> Unit = {},
     /** Consume without delay all streams configured with [Redirect.CAPTURE]. */
-    consumer: suspend (String) -> Unit = {},
-    onProcessStarted: suspend (Long?) -> Unit = {}
+    consumer: suspend (String) -> Unit = {}
 ): ProcessResult = coroutineScopeIO {
     // Special case if both stdout and stderr are captured,
     // leading to an impossibility to distinguish them:
