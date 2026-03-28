@@ -10,8 +10,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
-import org.amshove.kluent.shouldBeEqualTo
-import org.amshove.kluent.shouldContain
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.RepeatedTest
@@ -66,8 +65,8 @@ class ProcessKtTest {
                 val mode = if (print) PRINT else SILENT
                 val res = process("echo", "hello world", stdout = mode, stderr = mode)
 
-                res.resultCode shouldBeEqualTo 0
-                res.output shouldBeEqualTo emptyList()
+                assertThat(res.resultCode).isEqualTo(0)
+                assertThat(res.output).isEqualTo(emptyList<String>())
                 // Could not find a way to test the inherit behavior...
             }
     }
@@ -76,7 +75,7 @@ class ProcessKtTest {
     fun `process support multiple arguments`() =
         runSuspendTest {
             val output = process("echo", *OUT, stdout = CAPTURE).unwrap()
-            output shouldBeEqualTo listOf(OUT.joinToString(" "))
+            assertThat(output).isEqualTo(listOf(OUT.joinToString(" ")))
         }
 
     @Test
@@ -91,7 +90,7 @@ class ProcessKtTest {
                 stdout = CAPTURE,
                 charset = charset,
             ).unwrap()
-            output shouldBeEqualTo listOf(text)
+            assertThat(output).isEqualTo(listOf(text))
         }
 
     @Test
@@ -100,7 +99,7 @@ class ProcessKtTest {
             val name = "PROCESS_VAR"
             val value = "42"
             val output = process("env", env = mapOf(name to value), stdout = CAPTURE).unwrap()
-            output shouldContain "$name=$value"
+            assertThat(output).contains("$name=$value")
         }
 
     @Test
@@ -114,7 +113,7 @@ class ProcessKtTest {
                 directory = dir,
                 stdout = CAPTURE,
             ).unwrap()
-            output shouldBeEqualTo listOf(dir.path)
+            assertThat(output).isEqualTo(listOf(dir.path))
         }
 
     @Test
@@ -132,8 +131,8 @@ class ProcessKtTest {
             stderr = ToFile(err, append = true),
         ).unwrap()
 
-        out.readText() shouldBeEqualTo OUT.toList().joinLines()
-        err.readText() shouldBeEqualTo arrayOf(errHeader, *ERR).toList().joinLines()
+        assertThat(out.readText()).isEqualTo(OUT.toList().joinLines())
+        assertThat(err.readText()).isEqualTo(listOf(errHeader, *ERR).joinLines())
     }
 
     @Nested
@@ -153,9 +152,9 @@ class ProcessKtTest {
                 consumer = PrintStream(consumer)::println,
             )
 
-            res.resultCode shouldBeEqualTo 0
-            res.output shouldBeEqualTo ALL.toList()
-            consumer.toString() shouldBeEqualTo res.output.joinLines()
+            assertThat(res.resultCode).isEqualTo(0)
+            assertThat(res.output).isEqualTo(ALL.toList())
+            assertThat(consumer.toString()).isEqualTo(res.output.joinLines())
         }
     }
 
@@ -174,9 +173,9 @@ class ProcessKtTest {
             stderr = Consume { it.toList(stderr) },
         ).unwrap()
 
-        output shouldBeEqualTo emptyList()
-        stdout shouldBeEqualTo OUT.toList()
-        stderr shouldBeEqualTo ERR.toList()
+        assertThat(output).isEmpty()
+        assertThat(stdout).isEqualTo(OUT.toList())
+        assertThat(stderr).isEqualTo(ERR.toList())
     }
 
     @Test
@@ -197,8 +196,8 @@ class ProcessKtTest {
             },
         ).unwrap()
 
-        output shouldBeEqualTo emptyList()
-        stdoutAndStdErr shouldBeEqualTo listOf(1, 2, 3, 4).map { it.toString() }
+        assertThat(output).isEmpty()
+        assertThat(stdoutAndStdErr).isEqualTo(listOf(1, 2, 3, 4).map { it.toString() })
     }
 
     @Test
@@ -215,8 +214,8 @@ class ProcessKtTest {
             stderr = CAPTURE,
         ).unwrap()
 
-        output shouldBeEqualTo ERR.toList()
-        stdout shouldBeEqualTo OUT.toList()
+        assertThat(output).isEqualTo(ERR.toList())
+        assertThat(stdout).isEqualTo(OUT.toList())
     }
 
     @Nested
@@ -251,9 +250,9 @@ class ProcessKtTest {
                 job.cancel()
                 delay(500L)
 
-                job.isCancelled shouldBeEqualTo true
-                job.isCompleted shouldBeEqualTo true
-                visitedCancelledBlock shouldBeEqualTo true
+                assertThat(job.isCancelled).isTrue()
+                assertThat(job.isCompleted).isTrue()
+                assertThat(visitedCancelledBlock).isTrue()
             }
     }
 
@@ -261,8 +260,9 @@ class ProcessKtTest {
     inner class Unwrap {
         @Test
         fun `a valid result throws nothing`() {
-            ProcessResult(resultCode = 0, output = emptyList())
-                .unwrap() shouldBeEqualTo emptyList()
+            val result = ProcessResult(resultCode = 0, output = emptyList())
+                .unwrap()
+            assertThat(result).isEmpty()
         }
 
         @Test
@@ -270,7 +270,7 @@ class ProcessKtTest {
             val exception = assertThrows<IllegalStateException> {
                 ProcessResult(resultCode = 1, output = emptyList()).unwrap()
             }
-            exception.message!! shouldBeEqualTo "Invalid result: 1"
+            assertThat(exception.message).isEqualTo("Invalid result: 1")
         }
     }
 }

@@ -41,6 +41,7 @@ suspend fun process(
     destroyForcibly: Boolean = false,
     /** Consume without delay all streams configured with [Redirect.CAPTURE]. */
     consumer: suspend (String) -> Unit = {},
+    onProcessStarted: suspend (Long?) -> Unit = {}
 ): ProcessResult = coroutineScopeIO {
     // Special case if both stdout and stderr are captured,
     // leading to an impossibility to distinguish them:
@@ -62,6 +63,12 @@ suspend fun process(
             directory?.let { directory(it) }
             env?.let { environment().putAll(it) }
         }.start()
+    val pid = try {
+        process.pid()
+    } catch (e: Throwable) {
+        null
+    }
+    onProcessStarted(pid)
 
     val syncs = arrayOf<Deferred<Any?>>(
         async {

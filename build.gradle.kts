@@ -1,156 +1,111 @@
-import de.fayard.refreshVersions.core.versionFor
-import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import java.io.ByteArrayOutputStream
+
 
 plugins {
-    kotlin("jvm")
-    id("org.jetbrains.dokka")
-    jacoco
-    id("org.jlleitschuh.gradle.ktlint")
-    id("io.gitlab.arturbosch.detekt")
-    `maven-publish`
-    signing
-    id("io.github.gradle-nexus.publish-plugin")
+    kotlin("jvm") version "2.2.10"
+    id("maven-publish")
 }
 
-val myGroup = "com.github.pgreze".also { group = it }
-val myArtifactId = "kotlin-process"
-val tagVersion = System.getenv("GITHUB_REF")?.split('/')?.last()
-val myVersion = (tagVersion?.trimStart('v') ?: "WIP").also { version = it }
-val myDescription = "Kotlin friendly way to run an external process".also { description = it }
-val githubUrl = "https://github.com/pgreze/$myArtifactId"
+group = "no.iktdev"
+version = "1.0-SNAPSHOT"
+val artifactName = "process-runner"
 
-java {
-    sourceCompatibility = JavaVersion.VERSION_1_8
-    targetCompatibility = JavaVersion.VERSION_1_8
-
-    withSourcesJar()
-    withJavadocJar()
+repositories {
+    mavenCentral()
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile> {
-    compilerOptions.jvmTarget = JvmTarget.JVM_1_8
+dependencies {
+    implementation(kotlin("stdlib"))
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")
+
+    testImplementation("org.assertj:assertj-core:3.4.1")
+    testImplementation(platform("org.junit:junit-bom:5.9.1"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    testImplementation("io.mockk:mockk:1.13.5")
 }
 
 tasks.test {
     useJUnitPlatform()
-    finalizedBy(tasks.jacocoTestReport)
 }
 
-jacoco {
-    toolVersion = versionFor("org.jacoco:jacoco:_")
-}
-tasks.jacocoTestReport {
-    reports {
-        xml.required.set(true)
-        html.required.set(System.getenv("CI") != "true")
-    }
-}
-
-ktlint {
-    version.set(versionFor("com.pinterest.ktlint:ktlint-cli:_"))
-    baseline.set(projectDir.resolve("config/ktlint-baseline.xml"))
-}
-
-detekt {
-    baseline = projectDir.resolve("config/detekt-baseline.xml")
-}
-
-dependencies {
-    setOf(
-        kotlin("stdlib-jdk8"),
-        KotlinX.coroutines.core,
-    ).forEach { dependency ->
-        compileOnly(dependency)
-        testImplementation(dependency)
-    }
-
-    testImplementation("org.amshove.kluent:kluent:_")
-    testImplementation(platform(Testing.junit.bom))
-    testImplementation("org.junit.jupiter:junit-jupiter-api")
-    testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine")
-    testImplementation("org.junit.jupiter:junit-jupiter-params")
+kotlin {
+    jvmToolchain(21) // eller 23 hvis du vil
 }
 
 //
-// Publishing
+// Publisering til Reposilite
 //
 
-val propOrEnv: (String, String) -> String? = { key, envName ->
-    project.properties.getOrElse(key, defaultValue = { System.getenv(envName) })?.toString()
+val reposiliteUrl = if (version.toString().endsWith("SNAPSHOT")) {
+    "https://reposilite.iktdev.no/snapshots"
+} else {
+    "https://reposilite.iktdev.no/releases"
 }
-
-val ossrhUsername = propOrEnv("ossrh.username", "OSSRH_USERNAME")
-val ossrhPassword = propOrEnv("ossrh.password", "OSSRH_PASSWORD")
 
 publishing {
     publications {
-        create<MavenPublication>("maven") {
-            groupId = myGroup
-            artifactId = myArtifactId
-            version = myVersion
+        create<MavenPublication>("reposilite") {
+            artifactId = artifactName
 
-            from(components["java"])
+            from(components["kotlin"])
 
             pom {
-                name.set(myArtifactId)
-                description.set(myDescription)
-                url.set(githubUrl)
-                licenses {
-                    license {
-                        name.set("The Apache License, Version 2.0")
-                        url.set("http://www.apache.org/licenses/LICENSE-2.0.txt")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("pgreze")
-                        name.set("Pierrick Greze")
-                    }
-                }
-                scm {
-                    connection.set("$githubUrl.git")
-                    developerConnection.set("scm:git:ssh://github.com:pgreze/$myArtifactId.git")
-                    url.set(githubUrl)
-                }
+                name.set(artifactName)
+                description.set("IKTDev process runner with PID tracking and coroutine support")
+                url.set("https://github.com/iktdev/$artifactName")
             }
         }
     }
     repositories {
+        mavenLocal()
         maven {
-            name = "sonatype"
-            setUrl("https://oss.sonatype.org/service/local/staging/deploy/maven2/")
+            name = "reposilite"
+            url = uri(reposiliteUrl)
             credentials {
-                username = ossrhUsername
-                password = ossrhPassword
+                username = System.getenv("reposiliteUsername")
+                password = System.getenv("reposilitePassword")
             }
         }
     }
-}
-mapOf(
-    "signing.keyId" to "SIGNING_KEY_ID",
-    "signing.password" to "SIGNING_PASSWORD",
-    "signing.secretKeyRingFile" to "SIGNING_SECRET_KEY_RING_FILE",
-).forEach { (key, envName) ->
-    val value = propOrEnv(key, envName)
-        ?.let {
-            if (key.contains("File")) {
-                rootProject.file(it).absolutePath
-            } else {
-                it
-            }
-        }
-    ext.set(key, value)
-}
-signing {
-    sign(publishing.publications)
 }
 
-nexusPublishing {
-    packageGroup.set(myGroup)
-    repositories {
-        sonatype {
-            username.set(ossrhUsername)
-            password.set(ossrhPassword)
-        }
+
+
+fun findLatestTag(): String {
+    val stdout = ByteArrayOutputStream()
+    exec {
+        commandLine = listOf("git", "describe", "--tags", "--abbrev=0")
+        standardOutput = stdout
+        isIgnoreExitValue = true
     }
+    return stdout.toString().trim().removePrefix("v")
 }
+
+fun isSnapshotBuild(): Boolean {
+    val ref = System.getenv("GITHUB_REF") ?: ""
+    return ref.endsWith("/master") || ref.endsWith("/main")
+}
+
+fun getCommitsSinceTag(tag: String): Int {
+    val stdout = ByteArrayOutputStream()
+    exec {
+        commandLine = listOf("git", "rev-list", "$tag..HEAD", "--count")
+        standardOutput = stdout
+        isIgnoreExitValue = true
+    }
+    return stdout.toString().trim().toIntOrNull() ?: 0
+}
+
+val latestTag = findLatestTag()
+val versionString = if (isSnapshotBuild()) {
+    val parts = latestTag.split(".")
+    val patch = parts.lastOrNull()?.toIntOrNull()?.plus(1) ?: 1
+    val base = if (parts.size >= 2) "${parts[0]}.${parts[1]}" else latestTag
+    val buildNumber = getCommitsSinceTag("v$latestTag")
+    "$base.$patch-SNAPSHOT-$buildNumber"
+} else {
+    latestTag
+}
+
+version = versionString

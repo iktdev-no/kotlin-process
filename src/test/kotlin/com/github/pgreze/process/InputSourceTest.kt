@@ -5,7 +5,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
-import org.amshove.kluent.shouldBeEqualTo
+import org.assertj.core.api.Assertions.assertThat
 import org.junit.jupiter.api.DisplayName
 import org.junit.jupiter.api.Nested
 import org.junit.jupiter.api.RepeatedTest
@@ -17,15 +17,14 @@ import java.util.Collections
 
 @ExperimentalCoroutinesApi
 class InputSourceTest {
+
     private companion object {
         const val STRING = "hello world"
-        val LINES: List<String> = (0..5).map { "Hello $it" }
+        val LINES = (0..5).map { "Hello $it" }
     }
 
     @Test
-    fun fromFile(
-        @TempDir dir: Path,
-    ) = runSuspendTest {
+    fun fromFile(@TempDir dir: Path) = runSuspendTest {
         val input = dir.resolve("input.txt").toFile()
         input.writeText(STRING)
 
@@ -35,7 +34,7 @@ class InputSourceTest {
             stdout = Redirect.CAPTURE,
         ).unwrap()
 
-        output shouldBeEqualTo listOf(STRING)
+        assertThat(output).isEqualTo(listOf(STRING))
     }
 
     @Test
@@ -46,19 +45,21 @@ class InputSourceTest {
                 stdin = InputSource.fromString(STRING),
                 stdout = Redirect.CAPTURE,
             ).unwrap()
-            output shouldBeEqualTo listOf(STRING)
+
+            assertThat(output).isEqualTo(listOf(STRING))
         }
 
     @Test
     fun fromInputStream() =
         runSuspendTest {
             val inputStream = ByteArrayInputStream(STRING.toByteArray())
+
             val output = process(
                 "cat",
                 stdin = InputSource.fromInputStream(inputStream),
                 stdout = Redirect.CAPTURE,
             ).unwrap()
-            output shouldBeEqualTo listOf(STRING)
+            assertThat(output).isEqualTo(listOf(STRING))
         }
 
     @Test
@@ -69,25 +70,26 @@ class InputSourceTest {
                 stdin = InputSource.FromParent,
                 stdout = Redirect.CAPTURE,
             ).unwrap()
-            output shouldBeEqualTo listOf()
+            assertThat(output).isEmpty()
         }
 
     @Nested
     @DisplayName("ensure that input and output are concurrently processed")
     inner class AsyncStreams {
+
         @RepeatedTest(5)
         fun test() =
             runSuspendTest {
-                // Used to synchronized producer and consumer
                 val channel = Channel<Unit>(1)
                 val consumer = Collections.synchronizedList(mutableListOf<String>())
+
                 val proc = async(Dispatchers.IO) {
                     process(
                         "cat",
-                        stdin = InputSource.FromStream { str ->
+                        stdin = InputSource.FromStream { stream ->
                             LINES.forEach {
-                                str.write("$it\n".toByteArray())
-                                str.flush()
+                                stream.write("$it\n".toByteArray())
+                                stream.flush()
                                 channel.receive()
                             }
                         },
@@ -97,11 +99,10 @@ class InputSourceTest {
                 }
 
                 LINES
-                    .toList()
-                    .let { (1..it.size).map { idx -> it.subList(0, idx) } }
-                    .forEach { list ->
+                    .mapIndexed { idx, _ -> LINES.subList(0, idx + 1) }
+                    .forEach { expected ->
                         delay(50)
-                        consumer shouldBeEqualTo list
+                        assertThat(consumer).isEqualTo(expected)
                         channel.send(Unit)
                     }
 
