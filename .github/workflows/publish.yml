@@ -1,37 +1,60 @@
-name: Publish
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+# This workflow will build a Java project with Gradle and cache/restore any dependencies to improve the workflow execution time
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-java-with-gradle
+
+name: Build and Publish to reposilite
 
 on:
-  push:
-    tags:
-      - 'v*' # Push events to matching v*, i.e. v1.0, v20.15.10
+  release:
+    types: [created]
 
 jobs:
-  publish:
+  build:
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/post-checkout
-
-      - shell: bash
-        run: ./gradlew assemble dokkaHtml
-
-      - name: Publish to Maven Central
-        env:
-          OSSRH_USERNAME: ${{ secrets.OSSRH_USERNAME }}
-          OSSRH_PASSWORD: ${{ secrets.OSSRH_PASSWORD }}
-          SIGNING_KEY_ID: ${{ secrets.SIGNING_KEY_ID }}
-          SIGNING_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
-          SIGNING_SECRET_KEY_RING_CONTENT: ${{ secrets.SIGNING_SECRET_KEY_RING_CONTENT }}
-        run: |
-          export SIGNING_SECRET_KEY_RING_FILE=secret-key.gpg
-          echo $SIGNING_SECRET_KEY_RING_CONTENT | base64 -di > $SIGNING_SECRET_KEY_RING_FILE
-          ./gradlew publishToSonatype closeAndReleaseSonatypeStagingRepository --max-workers 1
-
-      - name: Publish Dokka
-        uses: netlify/actions/cli@master
+      - uses: actions/checkout@v3
+      - name: Set up JDK 21
+        uses: actions/setup-java@v3
         with:
-          args: deploy --dir=build/dokka/html --prod
+          java-version: '21'
+          distribution: 'zulu'
+
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@67421db6bd0bf253fb4bd25b31ebb98943c375e1
+
+      - name: Set executable permission on gradlew
+        run: chmod +x ./gradlew
+
+      - name: Test
+        working-directory: ${{ github.workspace }}
+        run: ls -la
+
+      - name: Set library version
+        working-directory: ${{ github.workspace }}
+        run: |
+          if [ -n "${{ github.event.release.tag_name }}" ]; then
+            version=$(echo ${{ github.event.release.tag_name }} | sed 's/^v//')
+            sed -i "s/version = \".*\"/version = \"$version\"/g" build.gradle.kts
+            grep -o "version = \"$version\"" build.gradle.kts
+          else
+            echo "No release tag found. Skipping library version update."
+          fi
+
+
+      - name: Initialize Gradle wrapper
+        run: ./gradlew wrapper
+
+      - name: Gradle Build
+        run: ./gradlew build
+
+
+      - name: Publish to Reposilite
+        run: ./gradlew publish
         env:
-          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          reposiliteUsername: ${{ secrets.reposiliteUsername }}
+          reposilitePassword: ${{ secrets.reposilitePassword }}
